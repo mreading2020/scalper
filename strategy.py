@@ -1,137 +1,147 @@
-"""Price-action strategy logic: trend and pullback detection."""
+"""Price-action strategy logic (exact specification)."""
 
-from typing import List, Dict
+from typing import List, Dict, Tuple
 
 
-def is_uptrend(candles: List[Dict], lookback: int = 6) -> bool:
+def get_closed_candles(klines: List[Dict]) -> List[Dict]:
+    """Exclude current live candle. Return only closed candles."""
+    return klines[:-1]
+
+
+def detect_trend(candles: List[Dict]) -> Tuple[bool, bool]:
     """
-    Detect uptrend: higher highs AND higher lows.
-    Compare last ~6 candles vs previous group.
+    Detect trend using last 12 closed candles.
+
+    Returns (trend_up, trend_down).
     """
-    if len(candles) < lookback * 2:
-        return False
+    if len(candles) < 12:
+        return False, False
 
-    recent = candles[-lookback:]
-    previous = candles[-(lookback * 2):-lookback]
+    highs = [c["high"] for c in candles]
+    lows = [c["low"] for c in candles]
 
-    recent_high = max(c["high"] for c in recent)
-    recent_low = min(c["low"] for c in recent)
-    prev_high = max(c["high"] for c in previous)
-    prev_low = min(c["low"] for c in previous)
+    recent_highs = highs[-6:]
+    previous_highs = highs[-12:-6]
 
-    return recent_high > prev_high and recent_low > prev_low
+    recent_lows = lows[-6:]
+    previous_lows = lows[-12:-6]
+
+    higher_highs_count = sum(1 for i in range(6) if recent_highs[i] > previous_highs[i])
+    higher_lows_count = sum(1 for i in range(6) if recent_lows[i] > previous_lows[i])
+
+    lower_highs_count = sum(1 for i in range(6) if recent_highs[i] < previous_highs[i])
+    lower_lows_count = sum(1 for i in range(6) if recent_lows[i] < previous_lows[i])
+
+    trend_up = (higher_highs_count >= 4) and (higher_lows_count >= 4)
+    trend_down = (lower_highs_count >= 4) and (lower_lows_count >= 4)
+
+    return trend_up, trend_down
 
 
-def is_downtrend(candles: List[Dict], lookback: int = 6) -> bool:
+def detect_pullback(candles: List[Dict]) -> Tuple[bool, bool]:
     """
-    Detect downtrend: lower highs AND lower lows.
-    Compare last ~6 candles vs previous group.
+    Detect pullback using last 5 closed candles.
+
+    Returns (pullback_long, pullback_short).
     """
-    if len(candles) < lookback * 2:
-        return False
-
-    recent = candles[-lookback:]
-    previous = candles[-(lookback * 2):-lookback]
-
-    recent_high = max(c["high"] for c in recent)
-    recent_low = min(c["low"] for c in recent)
-    prev_high = max(c["high"] for c in previous)
-    prev_low = min(c["low"] for c in previous)
-
-    return recent_high < prev_high and recent_low < prev_low
-
-
-def count_red_candles(candles: List[Dict], count: int = 5) -> int:
-    """Count consecutive red candles from the end (close < open)."""
-    reds = 0
-    for i in range(1, count + 1):
-        if len(candles) < i:
-            break
-        if candles[-i]["close"] < candles[-i]["open"]:
-            reds += 1
-        else:
-            break
-    return reds
-
-
-def count_green_candles(candles: List[Dict], count: int = 5) -> int:
-    """Count consecutive green candles from the end (close > open)."""
-    greens = 0
-    for i in range(1, count + 1):
-        if len(candles) < i:
-            break
-        if candles[-i]["close"] > candles[-i]["open"]:
-            greens += 1
-        else:
-            break
-    return greens
-
-
-def has_long_pullback(candles: List[Dict]) -> bool:
-    """
-    LONG pullback: 2–4 consecutive red candles after uptrend.
-    """
-    reds = count_red_candles(candles, count=4)
-    return 2 <= reds <= 4
-
-
-def has_short_pullback(candles: List[Dict]) -> bool:
-    """
-    SHORT pullback: 2–4 consecutive green candles after downtrend.
-    """
-    greens = count_green_candles(candles, count=4)
-    return 2 <= greens <= 4
-
-
-def get_previous_2_high(candles: List[Dict]) -> float:
-    """Get the high of the previous 2 candles (index -2 and -1)."""
-    if len(candles) < 2:
-        return 0.0
-    return max(candles[-2]["high"], candles[-1]["high"])
-
-
-def get_previous_2_low(candles: List[Dict]) -> float:
-    """Get the low of the previous 2 candles (index -2 and -1)."""
-    if len(candles) < 2:
-        return 0.0
-    return min(candles[-2]["low"], candles[-1]["low"])
-
-
-def get_last_5_low(candles: List[Dict]) -> float:
-    """Get the lowest low of the last 5 candles (excluding current)."""
     if len(candles) < 5:
-        return min(c["low"] for c in candles)
-    return min(c["low"] for c in candles[-5:])
+        return False, False
+
+    recent = candles[-5:]
+
+    bearish = sum(1 for c in recent if c["close"] < c["open"])
+    bullish = sum(1 for c in recent if c["close"] > c["open"])
+
+    pullback_long = bearish >= 2
+    pullback_short = bullish >= 2
+
+    return pullback_long, pullback_short
 
 
-def get_last_5_high(candles: List[Dict]) -> float:
-    """Get the highest high of the last 5 candles (excluding current)."""
-    if len(candles) < 5:
-        return max(c["high"] for c in candles)
-    return max(c["high"] for c in candles[-5:])
+def calculate_entries(candles: List[Dict]) -> Tuple[float, float]:
+    """
+    Calculate entry prices using last 3 closed candles.
+
+    Returns (long_entry, short_entry).
+    """
+    if len(candles) < 3:
+        return 0.0, 0.0
+
+    highs = [c["high"] for c in candles]
+    lows = [c["low"] for c in candles]
+
+    last_highs = highs[-3:]
+    last_lows = lows[-3:]
+
+    prev_high = max(last_highs[:-1])
+    prev_low = min(last_lows[:-1])
+
+    buffer = 0.0008
+
+    long_entry = prev_high * (1 + buffer)
+    short_entry = prev_low * (1 - buffer)
+
+    return long_entry, short_entry
 
 
-def get_average_candle_size(candles: List[Dict], count: int = 10) -> float:
-    """Get average candle size (high - low) for the last N candles."""
-    if len(candles) < count:
-        count = len(candles)
-    sizes = [c["high"] - c["low"] for c in candles[-count:]]
-    return sum(sizes) / len(sizes) if sizes else 0.0
+def calculate_stop_losses(candles: List[Dict]) -> Tuple[float, float]:
+    """
+    Calculate stop losses using last 5 closed candles (excluding breakout).
+
+    Returns (sl_long, sl_short).
+    """
+    if len(candles) < 6:
+        return 0.0, 0.0
+
+    highs = [c["high"] for c in candles]
+    lows = [c["low"] for c in candles]
+
+    sl_long = min(lows[-6:-1])
+    sl_short = max(highs[-6:-1])
+
+    return sl_long, sl_short
 
 
-def get_last_candle_size(candles: List[Dict]) -> float:
-    """Get the last candle's size (high - low)."""
-    if not candles:
-        return 0.0
-    last = candles[-1]
-    return last["high"] - last["low"]
+def calculate_take_profits(
+    long_entry: float,
+    short_entry: float,
+    sl_long: float,
+    sl_short: float
+) -> Tuple[float, float]:
+    """
+    Calculate take profits with fixed 1.5R.
+
+    Returns (tp_long, tp_short).
+    """
+    RR = 1.5
+
+    risk_long = long_entry - sl_long
+    risk_short = sl_short - short_entry
+
+    tp_long = long_entry + (risk_long * RR)
+    tp_short = short_entry - (risk_short * RR)
+
+    return tp_long, tp_short
 
 
-def get_20_candle_range(candles: List[Dict]) -> float:
-    """Get the range (high - low) of the last 20 candles."""
-    if len(candles) < 20:
-        return 0.0
-    recent = candles[-20:]
-    high = max(c["high"] for c in recent)
-    low = min(c["low"] for c in recent)
-    return high - low
+def calculate_risk_percent(
+    long_entry: float,
+    short_entry: float,
+    sl_long: float,
+    sl_short: float
+) -> Tuple[float, float]:
+    """
+    Calculate risk as percentage of entry.
+
+    Returns (risk_pct_long, risk_pct_short).
+    """
+    if long_entry == 0 or short_entry == 0:
+        return 0.0, 0.0
+
+    risk_long = long_entry - sl_long
+    risk_short = sl_short - short_entry
+
+    risk_pct_long = risk_long / long_entry
+    risk_pct_short = risk_short / short_entry
+
+    return risk_pct_long, risk_pct_short

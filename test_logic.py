@@ -1,164 +1,182 @@
-"""Test the signal logic with mock data."""
+"""Test the signal logic with mock data (exact specification)."""
 
 from typing import List, Dict
 import strategy
 import filters
-import risk
 
 
-def mock_candles_uptrend_pullback() -> List[Dict]:
+def mock_uptrend_pullback() -> List[Dict]:
     """
-    Create mock candles: uptrend for 12 candles, then 3 red candles (pullback).
-    """
-    candles = []
-
-    # Uptrend phase (12 candles with higher highs and lows)
-    for i in range(12):
-        candles.append({
-            "open": 100 + i * 0.5,
-            "high": 101 + i * 0.5,
-            "low": 99 + i * 0.5,
-            "close": 100.5 + i * 0.5,
-            "volume": 1000,
-            "open_time": i,
-        })
-
-    # Pullback phase (3 red candles)
-    base = candles[-1]["close"]
-    for i in range(3):
-        candles.append({
-            "open": base - i * 0.2,
-            "high": base - i * 0.2,
-            "low": base - i * 0.3,
-            "close": base - i * 0.3,
-            "volume": 1000,
-            "open_time": 12 + i,
-        })
-
-    return candles
-
-
-def mock_candles_downtrend_pullback() -> List[Dict]:
-    """
-    Create mock candles: downtrend for 12 candles, then 3 green candles (pullback).
+    Create 200 mock candles:
+    - Candles 0-93: ranging/neutral
+    - Candles 94-105: uptrend (12 candles with higher highs/lows)
+    - Candles 106-194: pullback (last 5 will have >= 2 red candles)
+    - Candle 195-199: last 5 with red candles
     """
     candles = []
 
-    # Downtrend phase (12 candles with lower highs and lows)
+    # Ranging phase (0-93)
+    for i in range(94):
+        candles.append({
+            "open": 100.0,
+            "high": 100.5,
+            "low": 99.5,
+            "close": 100.2,
+        })
+
+    # Uptrend phase (94-105): 12 candles with higher highs/lows
+    base = 100.0
     for i in range(12):
         candles.append({
-            "open": 100 - i * 0.5,
-            "high": 101 - i * 0.5,
-            "low": 99 - i * 0.5,
-            "close": 99.5 - i * 0.5,
-            "volume": 1000,
-            "open_time": i,
+            "open": base + i * 0.3,
+            "high": base + i * 0.3 + 0.5,
+            "low": base + i * 0.3 - 0.2,
+            "close": base + i * 0.3 + 0.3,
         })
 
-    # Pullback phase (3 green candles)
-    base = candles[-1]["close"]
-    for i in range(3):
+    # Pullback phase (106-194): red candles at the end
+    current_price = candles[-1]["close"]
+    for i in range(89):
+        if i < 84:  # Neutral
+            candles.append({
+                "open": current_price,
+                "high": current_price + 0.1,
+                "low": current_price - 0.1,
+                "close": current_price,
+            })
+        else:  # Last 5: red candles
+            candles.append({
+                "open": current_price - i * 0.05,
+                "high": current_price - i * 0.05,
+                "low": current_price - i * 0.1,
+                "close": current_price - i * 0.1,
+            })
+
+    # Last 5 should be red (close < open)
+    for i in range(5):
         candles.append({
-            "open": base + i * 0.2,
-            "high": base + i * 0.3,
-            "low": base + i * 0.2,
-            "close": base + i * 0.3,
-            "volume": 1000,
-            "open_time": 12 + i,
+            "open": current_price - 0.3 - i * 0.1,
+            "high": current_price - 0.3 - i * 0.1,
+            "low": current_price - 0.4 - i * 0.1,
+            "close": current_price - 0.4 - i * 0.1,
         })
 
-    return candles
+    return candles[:200]
 
 
-def test_uptrend_long_signal():
-    """Test LONG signal detection."""
-    candles = mock_candles_uptrend_pullback()
-    current_price = 95.0  # Below entry
+def mock_klines_for_api():
+    """Mock klines as returned by Binance (list of lists)."""
+    # Simulate 200 candles from Binance API
+    klines = []
+    for i in range(200):
+        klines.append([
+            1000000 + i * 300,  # open_time
+            100.0 + i * 0.01,   # open
+            100.5 + i * 0.01,   # high
+            99.5 + i * 0.01,    # low
+            100.2 + i * 0.01,   # close
+            1000.0,             # volume
+            2000000 + i * 300,  # close_time
+            "100000",           # quote asset volume
+            50,                 # number of trades
+            "50000",            # taker buy base asset volume
+            "50000",            # taker buy quote asset volume
+            "0",                # ignore
+        ])
+    return klines
 
-    is_up = strategy.is_uptrend(candles)
-    has_pullback = strategy.has_long_pullback(candles)
 
-    print("=== TEST: UPTREND + LONG PULLBACK ===")
-    print(f"Uptrend detected: {is_up}")
-    print(f"Long pullback detected: {has_pullback}")
+def test_trend_detection():
+    """Test trend detection with exact logic."""
+    candles = mock_uptrend_pullback()
 
-    if is_up and has_pullback:
-        entry = risk.calculate_long_entry(candles)
-        sl = risk.calculate_long_sl(candles)
-        tp = risk.calculate_long_tp(entry, sl)
-        risk_pct = risk.calculate_risk_percent(entry, sl, current_price)
+    trend_up, trend_down = strategy.detect_trend(candles)
 
-        print(f"Entry: {entry:.2f}")
-        print(f"SL: {sl:.2f}")
-        print(f"TP: {tp:.2f}")
-        print(f"Risk: {risk_pct:.2f}%")
-        print(f"Valid LONG setup: {risk.is_valid_long_setup(entry, sl, current_price)}")
+    print("=== TREND DETECTION TEST ===")
+    print(f"Trend Up: {trend_up}")
+    print(f"Trend Down: {trend_down}")
     print()
 
 
-def test_downtrend_short_signal():
-    """Test SHORT signal detection."""
-    candles = mock_candles_downtrend_pullback()
-    current_price = 90.0  # Above entry
+def test_pullback_detection():
+    """Test pullback detection with exact logic."""
+    candles = mock_uptrend_pullback()
 
-    is_down = strategy.is_downtrend(candles)
-    has_pullback = strategy.has_short_pullback(candles)
+    pullback_long, pullback_short = strategy.detect_pullback(candles)
 
-    print("=== TEST: DOWNTREND + SHORT PULLBACK ===")
-    print(f"Downtrend detected: {is_down}")
-    print(f"Short pullback detected: {has_pullback}")
+    print("=== PULLBACK DETECTION TEST ===")
+    print(f"Pullback Long (bearish >= 2): {pullback_long}")
+    print(f"Pullback Short (bullish >= 2): {pullback_short}")
+    print()
 
-    if is_down and has_pullback:
-        entry = risk.calculate_short_entry(candles)
-        sl = risk.calculate_short_sl(candles)
-        tp = risk.calculate_short_tp(entry, sl)
-        risk_pct = risk.calculate_risk_percent(entry, sl, current_price)
 
-        print(f"Entry: {entry:.2f}")
-        print(f"SL: {sl:.2f}")
-        print(f"TP: {tp:.2f}")
-        print(f"Risk: {risk_pct:.2f}%")
-        print(f"Valid SHORT setup: {risk.is_valid_short_setup(entry, sl, current_price)}")
+def test_entries_and_sl():
+    """Test entry and SL calculation."""
+    candles = mock_uptrend_pullback()
+
+    long_entry, short_entry = strategy.calculate_entries(candles)
+    sl_long, sl_short = strategy.calculate_stop_losses(candles)
+    tp_long, tp_short = strategy.calculate_take_profits(long_entry, short_entry, sl_long, sl_short)
+    risk_pct_long, risk_pct_short = strategy.calculate_risk_percent(long_entry, short_entry, sl_long, sl_short)
+
+    print("=== ENTRY / SL / TP TEST ===")
+    print(f"Long Entry: {long_entry:.6f}")
+    print(f"Long SL: {sl_long:.6f}")
+    print(f"Long TP: {tp_long:.6f}")
+    print(f"Long Risk%: {risk_pct_long * 100:.2f}%")
+    print()
+    print(f"Short Entry: {short_entry:.6f}")
+    print(f"Short SL: {sl_short:.6f}")
+    print(f"Short TP: {tp_short:.6f}")
+    print(f"Short Risk%: {risk_pct_short * 100:.2f}%")
     print()
 
 
 def test_filters():
-    """Test filter logic."""
-    candles = mock_candles_uptrend_pullback()
-    current_price = 95.0
-    entry = risk.calculate_long_entry(candles)
-    sl = risk.calculate_long_sl(candles)
-    risk_pct = risk.calculate_risk_percent(entry, sl, current_price)
+    """Test all filters."""
+    candles = mock_uptrend_pullback()
 
-    print("=== TEST: FILTERS ===")
+    long_entry, short_entry = strategy.calculate_entries(candles)
+    sl_long, sl_short = strategy.calculate_stop_losses(candles)
+    risk_pct_long, risk_pct_short = strategy.calculate_risk_percent(long_entry, short_entry, sl_long, sl_short)
 
-    # Test late move filter
-    late_move, reason = filters.late_move_filter(candles)
-    print(f"Late move filter: {late_move} ({reason})")
+    print("=== FILTER TESTS ===")
 
-    # Test distance to entry
-    dist_skip, dist_reason = filters.distance_to_entry_filter(
-        "TEST", candles, current_price, entry, is_long=True
+    skip, reason = filters.late_move_filter(candles)
+    print(f"Late move: {skip} ({reason})")
+
+    skip, reason = filters.distance_to_entry_filter(candles, long_entry, short_entry, is_long=True)
+    print(f"Distance to entry (LONG): {skip} ({reason})")
+
+    skip, reason = filters.volatility_chop_filter(candles)
+    print(f"Volatility/chop: {skip} ({reason})")
+
+    skip, reason = filters.risk_sanity_filter(risk_pct_long)
+    print(f"Risk sanity (LONG): {skip} ({reason})")
+
+    skip, reason = filters.apply_all_filters(
+        candles, long_entry, short_entry, risk_pct_long, risk_pct_short, is_long=True
     )
-    print(f"Distance to entry filter: {dist_skip} ({dist_reason})")
+    print(f"\nAll filters (LONG): skip={skip}, reason='{reason}'")
+    print()
 
-    # Test volatility
-    chop, chop_reason = filters.volatility_chop_filter(candles, current_price)
-    print(f"Volatility/chop filter: {chop} ({chop_reason})")
 
-    # Test risk sanity
-    risk_skip, risk_reason = filters.risk_sanity_filter(risk_pct, current_price)
-    print(f"Risk sanity filter: {risk_skip} ({risk_reason})")
+def test_closed_candles():
+    """Test that closed candles are properly extracted."""
+    klines = mock_klines_for_api()
+    closed = strategy.get_closed_candles(klines)
 
-    # All filters
-    should_skip, skip_reason = filters.check_all_filters(
-        "TEST", candles, current_price, entry, is_long=True, risk_pct=risk_pct
-    )
-    print(f"All filters: skip={should_skip} reason='{skip_reason}'")
+    print("=== CLOSED CANDLES TEST ===")
+    print(f"Total klines: {len(klines)}")
+    print(f"Closed candles: {len(closed)}")
+    print(f"Expected: 199 (all but current live candle)")
     print()
 
 
 if __name__ == "__main__":
-    test_uptrend_long_signal()
-    test_downtrend_short_signal()
+    test_closed_candles()
+    test_trend_detection()
+    test_pullback_detection()
+    test_entries_and_sl()
     test_filters()
+    print("All tests completed.")

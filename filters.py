@@ -1,19 +1,20 @@
-"""Filters to skip invalid setups."""
+"""Filters (exact specification)."""
 
 from typing import List, Dict, Tuple
-import strategy
 
 
 def late_move_filter(candles: List[Dict]) -> Tuple[bool, str]:
     """
-    Filter: If last candle size > 1.5x average of last 10 candles → SKIP.
-    Returns (is_late_move, reason).
-    """
-    avg_size = strategy.get_average_candle_size(candles, count=10)
-    last_size = strategy.get_last_candle_size(candles)
+    Late move filter: if last_size > avg_size * 1.5 → SKIP.
 
-    if avg_size == 0:
+    Returns (should_skip, reason).
+    """
+    if len(candles) < 10:
         return False, ""
+
+    sizes = [c["high"] - c["low"] for c in candles]
+    last_size = sizes[-1]
+    avg_size = sum(sizes[-10:]) / 10
 
     if last_size > avg_size * 1.5:
         return True, "late move"
@@ -22,96 +23,116 @@ def late_move_filter(candles: List[Dict]) -> Tuple[bool, str]:
 
 
 def distance_to_entry_filter(
-    symbol: str,
     candles: List[Dict],
-    current_price: float,
-    entry: float,
+    long_entry: float,
+    short_entry: float,
     is_long: bool
 ) -> Tuple[bool, str]:
     """
-    Filter: If current price is too far above entry (LONG) or below (SHORT) → SKIP.
-    LONG: if current price > entry * (1 + 0.002) → SKIP ("missed long")
-    SHORT: if current price < entry * (1 - 0.002) → SKIP ("missed short")
-    Threshold: 0.2% (0.002)
+    Distance to entry filter: avoid missed entries.
+
+    LONG: if (price - long_entry) / long_entry > 0.0015 → SKIP
+    SHORT: if (short_entry - price) / short_entry > 0.0015 → SKIP
+
+    Returns (should_skip, reason).
     """
-    if current_price is None or entry == 0:
+    if len(candles) == 0:
         return False, ""
 
+    price = candles[-1]["close"]
+
     if is_long:
-        # LONG: current should be below entry (not above)
-        if current_price > entry * 1.002:
+        if long_entry == 0:
+            return False, ""
+        distance = (price - long_entry) / long_entry
+        if distance > 0.0015:
             return True, "missed long"
     else:
-        # SHORT: current should be above entry (not below)
-        if current_price < entry * 0.998:
+        if short_entry == 0:
+            return False, ""
+        distance = (short_entry - price) / short_entry
+        if distance > 0.0015:
             return True, "missed short"
 
     return False, ""
 
 
-def volatility_chop_filter(candles: List[Dict], current_price: float) -> Tuple[bool, str]:
+def volatility_chop_filter(candles: List[Dict]) -> Tuple[bool, str]:
     """
-    Filter: If 20-candle range < ~0.4% of price → SKIP (too choppy).
-    Returns (is_chop, reason).
-    """
-    range_20 = strategy.get_20_candle_range(candles)
+    Volatility / chop filter: if range_pct < 0.004 → SKIP.
 
-    if current_price == 0:
+    range_pct = (range_high - range_low) / price
+
+    Returns (should_skip, reason).
+    """
+    if len(candles) < 20:
         return False, ""
 
-    range_pct = (range_20 / current_price) * 100
+    highs = [c["high"] for c in candles]
+    lows = [c["low"] for c in candles]
+    price = candles[-1]["close"]
 
-    if range_pct < 0.4:
+    if price == 0:
+        return False, ""
+
+    range_high = max(highs[-20:])
+    range_low = min(lows[-20:])
+
+    range_pct = (range_high - range_low) / price
+
+    if range_pct < 0.004:
         return True, "chop"
 
     return False, ""
 
 
-def risk_sanity_filter(
-    risk_pct: float,
-    current_price: float
-) -> Tuple[bool, str]:
+def risk_sanity_filter(risk_pct: float) -> Tuple[bool, str]:
     """
-    Filter: Risk validation.
-    - If risk < 0.2% of price → SKIP (noise)
-    - If risk > 1.2% of price → SKIP (too much)
-    Returns (skip, reason).
-    """
-    if current_price == 0:
-        return False, ""
+    Risk sanity filter: if risk_pct < 0.002 or > 0.012 → SKIP.
 
-    # Check if risk is too small (noise)
-    if risk_pct < 0.2:
+    Returns (should_skip, reason).
+    """
+    if risk_pct < 0.002:
         return True, "risk too small"
 
-    # Check if risk is too large
-    if risk_pct > 1.2:
+    if risk_pct > 0.012:
         return True, "risk too large"
 
     return False, ""
 
 
-def check_all_filters(
-    symbol: str,
+def apply_all_filters(
     candles: List[Dict],
-    current_price: float,
-    entry: float,
-    is_long: bool,
-    risk_pct: float
+    long_entry: float,
+    short_entry: float,
+    risk_pct_long: float,
+    risk_pct_short: float,
+    is_long: bool
 ) -> Tuple[bool, str]:
     """
-    Run all filters and return first failure (skip, reason).
+    Apply all filters in order. Return first failure.
+
     Returns (should_skip, reason).
     """
-    checks = [
-        late_move_filter(candles),
-        distance_to_entry_filter(symbol, candles, current_price, entry, is_long),
-        volatility_chop_filter(candles, current_price),
-        risk_sanity_filter(risk_pct, current_price),
-    ]
+    # Late move filter (same for both LONG/SHORT)
+    skip, reason = late_move_filter(candles)
+    if skip:
+        return True, reason
 
-    for skip, reason in checks:
-        if skip:
-            return True, reason
+    # Distance to entry filter
+    skip, reason = distance_to_entry_filter(candles, long_entry, short_entry, is_long)
+    if skip:
+        return True, reason
+
+    # Volatility filter (same for both LONG/SHORT)
+    skip, reason = volatility_chop_filter(candles)
+    if skip:
+        return True, reason
+
+    # Risk sanity filter
+    risk_pct = risk_pct_long if is_long else risk_pct_short
+    skip, reason = risk_sanity_filter(risk_pct)
+    if skip:
+        return True, reason
 
     return False, ""
