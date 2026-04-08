@@ -95,6 +95,21 @@ def analyze_pair(symbol: str) -> Optional[Dict]:
         trigger_state = strategy.get_trigger_state(price, long_entry, is_long=True)
         signal = "LONG" if trigger_state == "triggered" else "WAIT LONG"
 
+        # Check if WAIT setup is too far from entry
+        if signal == "WAIT LONG":
+            if strategy.is_wait_gap_too_large(price, long_entry, is_long=True, max_gap=0.003):
+                return {
+                    "symbol": symbol,
+                    "signal": "NO TRADE",
+                    "entry": None,
+                    "sl": None,
+                    "tp": None,
+                    "risk_pct": None,
+                    "reason": "waiting too far from entry",
+                    "score": None,
+                    "metrics": None
+                }
+
         return {
             "symbol": symbol,
             "signal": signal,
@@ -154,6 +169,21 @@ def analyze_pair(symbol: str) -> Optional[Dict]:
         trigger_state = strategy.get_trigger_state(price, short_entry, is_long=False)
         signal = "SHORT" if trigger_state == "triggered" else "WAIT SHORT"
 
+        # Check if WAIT setup is too far from entry
+        if signal == "WAIT SHORT":
+            if strategy.is_wait_gap_too_large(price, short_entry, is_long=False, max_gap=0.003):
+                return {
+                    "symbol": symbol,
+                    "signal": "NO TRADE",
+                    "entry": None,
+                    "sl": None,
+                    "tp": None,
+                    "risk_pct": None,
+                    "reason": "waiting too far from entry",
+                    "score": None,
+                    "metrics": None
+                }
+
         return {
             "symbol": symbol,
             "signal": signal,
@@ -197,12 +227,12 @@ def format_output(results: List[Dict]) -> None:
         skips + no_trades
     )
 
-    print("\n" + "=" * 165)
+    print("\n" + "=" * 180)
     print(
         f"{'SYMBOL':<10} {'SIGNAL':<12} {'ENTRY':<15} {'SL':<15} {'TP':<15} "
-        f"{'RISK%':<8} {'DIST%':<8} {'PULL':<6} {'RATIO':<7} {'SCORE':<6} {'REASON':<20}"
+        f"{'RISK%':<8} {'DIST%':<8} {'GAP%':<8} {'PULL':<6} {'RATIO':<7} {'SCORE':<6} {'REASON':<20}"
     )
-    print("=" * 165)
+    print("=" * 180)
 
     for result in output_results:
         symbol = result["symbol"]
@@ -217,22 +247,32 @@ def format_output(results: List[Dict]) -> None:
 
             metrics = result["metrics"]
             dist_pct = metrics['distance_to_entry_pct'] * 100
-            dist_str = f"{dist_pct:.2f}%"
+            gap_pct = metrics['gap_to_entry_pct'] * 100
+
+            # For WAIT states: show gap, distance is 0
+            # For LONG/SHORT: show distance, gap is 0
+            if signal in ("WAIT LONG", "WAIT SHORT"):
+                dist_str = "0.00%"
+                gap_str = f"{gap_pct:.2f}%"
+            else:
+                dist_str = f"{dist_pct:.2f}%"
+                gap_str = "0.00%"
+
             pull_str = f"{metrics['pullback_count']}"
             ratio_str = f"{metrics['last_candle_ratio']:.2f}x"
             score_str = f"{result['score']}/5"
 
             print(
                 f"{symbol:<10} {signal:<12} {entry:<15} {sl:<15} {tp:<15} "
-                f"{risk_str:<8} {dist_str:<8} {pull_str:<6} {ratio_str:<7} {score_str:<6} {reason:<20}"
+                f"{risk_str:<8} {dist_str:<8} {gap_str:<8} {pull_str:<6} {ratio_str:<7} {score_str:<6} {reason:<20}"
             )
         else:
             print(
                 f"{symbol:<10} {signal:<12} {'-':<15} {'-':<15} {'-':<15} "
-                f"{'-':<8} {'-':<8} {'-':<6} {'-':<7} {'-':<6} {reason:<20}"
+                f"{'-':<8} {'-':<8} {'-':<8} {'-':<6} {'-':<7} {'-':<6} {reason:<20}"
             )
 
-    print("=" * 165 + "\n")
+    print("=" * 180 + "\n")
 
 
 def main():

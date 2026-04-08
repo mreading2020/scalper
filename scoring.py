@@ -24,7 +24,7 @@ def get_distance_to_entry(candles: List[Dict], entry: float, is_long: bool) -> f
     """
     Calculate distance from current price to entry as decimal (not percentage).
 
-    Uses shared calculate_distance function for consistency.
+    Uses shared calculate_distance function (how far beyond entry).
 
     Returns decimal value (e.g., 0.0029 for 0.29%).
     """
@@ -35,6 +35,23 @@ def get_distance_to_entry(candles: List[Dict], entry: float, is_long: bool) -> f
     side = "LONG" if is_long else "SHORT"
 
     return filters.calculate_distance(price, entry, side)
+
+
+def get_gap_to_entry(candles: List[Dict], entry: float, is_long: bool) -> float:
+    """
+    Calculate gap from current price to entry as decimal (not percentage).
+
+    Uses shared calculate_gap function (how far from entry).
+
+    Returns decimal value (e.g., 0.0045 for 0.45%).
+    """
+    if len(candles) == 0 or entry == 0:
+        return 0.0
+
+    price = candles[-1]["close"]
+    side = "LONG" if is_long else "SHORT"
+
+    return filters.calculate_gap(price, entry, side)
 
 
 def get_last_candle_size_ratio(candles: List[Dict]) -> float:
@@ -107,11 +124,15 @@ def calculate_setup_score(
     if 0.3 <= risk_pct_val <= 0.7:
         score += 1
 
-    # Score 2: Distance from entry under 0.1%
+    # Score 2: Distance from entry under 0.1% (for already-triggered entries)
     distance = get_distance_to_entry(candles, entry, is_long)
     metrics["distance_to_entry_pct"] = distance
     if distance < 0.1:
         score += 1
+
+    # Also calculate gap for WAIT states
+    gap = get_gap_to_entry(candles, entry, is_long)
+    metrics["gap_to_entry_pct"] = gap
 
     # Score 3: Pullback count >= 3
     if is_long:

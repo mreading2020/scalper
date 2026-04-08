@@ -7,10 +7,12 @@ def calculate_distance(price: float, entry: float, side: str) -> float:
     """
     Calculate entry distance as decimal (not percentage).
 
-    Returns distance >= 0.0
+    Measures how far price has already moved BEYOND entry (in wrong direction).
 
-    LONG: (price - entry) / entry
-    SHORT: (entry - price) / entry
+    LONG: only positive if price > entry (missed long)
+    SHORT: only positive if price < entry (missed short)
+
+    Returns distance >= 0.0
     """
     if entry == 0:
         return 0.0
@@ -23,6 +25,30 @@ def calculate_distance(price: float, entry: float, side: str) -> float:
         return 0.0
 
     return max(0.0, distance)
+
+
+def calculate_gap(price: float, entry: float, side: str) -> float:
+    """
+    Calculate gap to entry as decimal (not percentage).
+
+    Measures how far price still IS FROM entry (waiting distance).
+
+    LONG: positive while price < entry (gap to reach entry)
+    SHORT: positive while price > entry (gap to reach entry)
+
+    Returns gap >= 0.0
+    """
+    if entry == 0:
+        return 0.0
+
+    if side == "LONG":
+        gap = (entry - price) / entry
+    elif side == "SHORT":
+        gap = (price - entry) / entry
+    else:
+        return 0.0
+
+    return max(0.0, gap)
 
 
 def late_move_filter(candles: List[Dict]) -> Tuple[bool, str]:
@@ -54,7 +80,7 @@ def distance_to_entry_filter(
     """
     Distance to entry filter: avoid missed entries.
 
-    Uses shared calculate_distance function.
+    Uses shared calculate_distance function (how far price is BEYOND entry).
     Threshold: 0.0012 (0.12%)
 
     Returns (should_skip, reason).
@@ -73,15 +99,18 @@ def distance_to_entry_filter(
         side = "SHORT"
 
     distance = calculate_distance(price, entry, side)
+    gap = calculate_gap(price, entry, side)
 
     if debug:
         dist_pct = distance * 100
-        print(f"  [DISTANCE FILTER] side={side} price={price:.2f} entry={entry:.2f} "
-              f"distance_raw={distance:.6f} dist_pct={dist_pct:.2f}% threshold={max_distance:.4f}")
+        gap_pct = gap * 100
+        print(f"  [ENTRY STATE] side={side} price={price:.6f} entry={entry:.6f} "
+              f"distance_raw={distance:.6f} gap_raw={gap:.6f} "
+              f"dist_pct={dist_pct:.2f}% gap_pct={gap_pct:.2f}%")
 
     if distance > max_distance:
         if debug:
-            print(f"    → SKIP: {distance:.6f} > {max_distance:.6f}")
+            print(f"    → SKIP: distance {distance:.6f} > {max_distance:.6f} (missed entry)")
         if is_long:
             return True, "missed long"
         else:

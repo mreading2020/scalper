@@ -160,3 +160,24 @@ def get_trigger_state(price: float, entry: float, is_long: bool) -> str:
         return "triggered" if price >= entry else "waiting"
     else:
         return "triggered" if price <= entry else "waiting"
+
+
+def is_wait_gap_too_large(price: float, entry: float, is_long: bool, max_gap: float = 0.003) -> bool:
+    """
+    Check if WAIT setup is too far from entry to be useful.
+
+    max_gap default: 0.003 (0.30%)
+
+    Returns True if setup should be skipped (gap too large).
+    """
+    if entry == 0:
+        return False
+
+    if is_long:
+        gap = (entry - price) / entry
+    else:
+        gap = (price - entry) / entry
+
+    gap = max(0.0, gap)
+
+    return gap > max_gap
