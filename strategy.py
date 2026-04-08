@@ -145,3 +145,18 @@ def calculate_risk_percent(
     risk_pct_short = risk_short / short_entry
 
     return risk_pct_long, risk_pct_short
+
+
+def get_trigger_state(price: float, entry: float, is_long: bool) -> str:
+    """
+    Determine if breakout entry has been triggered.
+
+    LONG: triggered when price >= entry
+    SHORT: triggered when price <= entry
+
+    Returns "triggered" or "waiting".
+    """
+    if is_long:
+        return "triggered" if price >= entry else "waiting"
+    else:
+        return "triggered" if price <= entry else "waiting"

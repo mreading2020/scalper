@@ -90,9 +90,14 @@ def analyze_pair(symbol: str) -> Optional[Dict]:
         # Calculate setup score and metrics
         score, metrics = scoring.calculate_setup_score(candles, long_entry, risk_pct_long, is_long=True)
 
+        # Determine trigger state
+        price = candles[-1]["close"]
+        trigger_state = strategy.get_trigger_state(price, long_entry, is_long=True)
+        signal = "LONG" if trigger_state == "triggered" else "WAIT LONG"
+
         return {
             "symbol": symbol,
-            "signal": "LONG",
+            "signal": signal,
             "entry": long_entry,
             "sl": sl_long,
             "tp": tp_long,
@@ -144,9 +149,14 @@ def analyze_pair(symbol: str) -> Optional[Dict]:
         # Calculate setup score and metrics
         score, metrics = scoring.calculate_setup_score(candles, short_entry, risk_pct_short, is_long=False)
 
+        # Determine trigger state
+        price = candles[-1]["close"]
+        trigger_state = strategy.get_trigger_state(price, short_entry, is_long=False)
+        signal = "SHORT" if trigger_state == "triggered" else "WAIT SHORT"
+
         return {
             "symbol": symbol,
-            "signal": "SHORT",
+            "signal": signal,
             "entry": short_entry,
             "sl": sl_short,
             "tp": tp_short,
@@ -162,34 +172,44 @@ def analyze_pair(symbol: str) -> Optional[Dict]:
 def format_output(results: List[Dict]) -> None:
     """Format and print results with quality scoring."""
     # Separate by signal type
-    longs = [r for r in results if r["signal"] == "LONG"]
-    shorts = [r for r in results if r["signal"] == "SHORT"]
+    triggered_longs = [r for r in results if r["signal"] == "LONG"]
+    triggered_shorts = [r for r in results if r["signal"] == "SHORT"]
+    wait_longs = [r for r in results if r["signal"] == "WAIT LONG"]
+    wait_shorts = [r for r in results if r["signal"] == "WAIT SHORT"]
     skips = [r for r in results if r["signal"] == "SKIP"]
     no_trades = [r for r in results if r["signal"] == "NO TRADE"]
 
-    # Sort by score (descending) and limit to top 2
-    longs.sort(key=lambda x: x.get("score", -1), reverse=True)
-    shorts.sort(key=lambda x: x.get("score", -1), reverse=True)
+    # Sort by score (descending) and limit to top 2 for each category
+    triggered_longs.sort(key=lambda x: x.get("score", -1), reverse=True)
+    triggered_shorts.sort(key=lambda x: x.get("score", -1), reverse=True)
+    wait_longs.sort(key=lambda x: x.get("score", -1), reverse=True)
+    wait_shorts.sort(key=lambda x: x.get("score", -1), reverse=True)
 
-    top_longs = longs[:2]
-    top_shorts = shorts[:2]
+    top_triggered_longs = triggered_longs[:2]
+    top_triggered_shorts = triggered_shorts[:2]
+    top_wait_longs = wait_longs[:2]
+    top_wait_shorts = wait_shorts[:2]
 
-    # Combine for output
-    output_results = top_longs + top_shorts + skips + no_trades
+    # Combine for output: triggered first, then waiting, then skips, then no trades
+    output_results = (
+        top_triggered_longs + top_triggered_shorts +
+        top_wait_longs + top_wait_shorts +
+        skips + no_trades
+    )
 
-    print("\n" + "=" * 160)
+    print("\n" + "=" * 165)
     print(
-        f"{'SYMBOL':<10} {'SIGNAL':<10} {'ENTRY':<15} {'SL':<15} {'TP':<15} "
+        f"{'SYMBOL':<10} {'SIGNAL':<12} {'ENTRY':<15} {'SL':<15} {'TP':<15} "
         f"{'RISK%':<8} {'DIST%':<8} {'PULL':<6} {'RATIO':<7} {'SCORE':<6} {'REASON':<20}"
     )
-    print("=" * 160)
+    print("=" * 165)
 
     for result in output_results:
         symbol = result["symbol"]
         signal = result["signal"]
         reason = result["reason"]
 
-        if signal in ("LONG", "SHORT"):
+        if signal in ("LONG", "SHORT", "WAIT LONG", "WAIT SHORT"):
             entry = round_price(result["entry"])
             sl = round_price(result["sl"])
             tp = round_price(result["tp"])
@@ -203,16 +223,16 @@ def format_output(results: List[Dict]) -> None:
             score_str = f"{result['score']}/5"
 
             print(
-                f"{symbol:<10} {signal:<10} {entry:<15} {sl:<15} {tp:<15} "
+                f"{symbol:<10} {signal:<12} {entry:<15} {sl:<15} {tp:<15} "
                 f"{risk_str:<8} {dist_str:<8} {pull_str:<6} {ratio_str:<7} {score_str:<6} {reason:<20}"
             )
         else:
             print(
-                f"{symbol:<10} {signal:<10} {'-':<15} {'-':<15} {'-':<15} "
+                f"{symbol:<10} {signal:<12} {'-':<15} {'-':<15} {'-':<15} "
                 f"{'-':<8} {'-':<8} {'-':<6} {'-':<7} {'-':<6} {reason:<20}"
             )
 
-    print("=" * 160 + "\n")
+    print("=" * 165 + "\n")
 
 
 def main():
