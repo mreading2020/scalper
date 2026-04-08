@@ -101,6 +101,34 @@ def risk_sanity_filter(risk_pct: float) -> Tuple[bool, str]:
     return False, ""
 
 
+def expanded_move_filter(candles: List[Dict]) -> Tuple[bool, str]:
+    """
+    Recent expansion filter: if price has already moved >1.5% in last 20 candles → SKIP.
+
+    move_pct = (recent_high - recent_low) / recent_low
+
+    Returns (should_skip, reason).
+    """
+    if len(candles) < 20:
+        return False, ""
+
+    highs = [c["high"] for c in candles]
+    lows = [c["low"] for c in candles]
+
+    recent_high = max(highs[-20:])
+    recent_low = min(lows[-20:])
+
+    if recent_low == 0:
+        return False, ""
+
+    move_pct = (recent_high - recent_low) / recent_low
+
+    if move_pct > 0.015:
+        return True, "expanded move"
+
+    return False, ""
+
+
 def apply_all_filters(
     candles: List[Dict],
     long_entry: float,
@@ -114,6 +142,11 @@ def apply_all_filters(
 
     Returns (should_skip, reason).
     """
+    # Expanded move filter (check before other setup filters)
+    skip, reason = expanded_move_filter(candles)
+    if skip:
+        return True, reason
+
     # Late move filter (same for both LONG/SHORT)
     skip, reason = late_move_filter(candles)
     if skip:
