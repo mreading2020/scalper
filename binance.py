@@ -19,11 +19,16 @@ def get_top_pairs(limit: int = 10) -> List[str]:
         data = resp.json()
 
         # Filter USDT pairs and sort by quoteAssetVolume
-        usdt_pairs = [
-            item for item in data if item["symbol"].endswith("USDT")
-        ]
+        usdt_pairs = []
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            if item.get("symbol", "").endswith("USDT"):
+                usdt_pairs.append(item)
+
+        # Sort by quoteAssetVolume (or volume if quoteAssetVolume doesn't exist)
         usdt_pairs.sort(
-            key=lambda x: float(x["quoteAssetVolume"]),
+            key=lambda x: float(x.get("quoteAssetVolume") or x.get("volume") or 0),
             reverse=True
         )
 
