@@ -8,6 +8,17 @@ import filters
 import scoring
 
 
+def get_debug_info(symbol: str, price: float, entry: float, side: str) -> str:
+    """Generate debug info for a signal (used only for displayed rows)."""
+    distance = filters.calculate_distance(price, entry, side)
+    gap = filters.calculate_gap(price, entry, side)
+    dist_pct = distance * 100
+    gap_pct = gap * 100
+
+    return (f"[ENTRY STATE] symbol={symbol} side={side} price={price:.6f} entry={entry:.6f} "
+            f"distance_raw={distance:.6f} gap_raw={gap:.6f} dist_pct={dist_pct:.2f}% gap_pct={gap_pct:.2f}%")
+
+
 def round_price(price: float) -> str:
     """Round price appropriately."""
     if price > 10000:
@@ -42,7 +53,8 @@ def analyze_pair(symbol: str) -> Optional[Dict]:
             "risk_pct": None,
             "reason": "no trend",
             "score": None,
-            "metrics": None
+            "metrics": None,
+            "debug_info": None
         }
 
     # Detect pullback
@@ -60,7 +72,8 @@ def analyze_pair(symbol: str) -> Optional[Dict]:
                 "risk_pct": None,
                 "reason": "no pullback",
                 "score": None,
-                "metrics": None
+                "metrics": None,
+                "debug_info": None
             }
 
         # Calculate setup
@@ -69,9 +82,9 @@ def analyze_pair(symbol: str) -> Optional[Dict]:
         tp_long, tp_short = strategy.calculate_take_profits(long_entry, short_entry, sl_long, sl_short)
         risk_pct_long, risk_pct_short = strategy.calculate_risk_percent(long_entry, short_entry, sl_long, sl_short)
 
-        # Apply filters (with debug output)
+        # Apply filters (silent mode, debug collected only if final signal passes)
         should_skip, skip_reason = filters.apply_all_filters(
-            candles, long_entry, short_entry, risk_pct_long, risk_pct_short, is_long=True, debug=True
+            candles, long_entry, short_entry, risk_pct_long, risk_pct_short, is_long=True, debug=False
         )
 
         if should_skip:
@@ -84,7 +97,8 @@ def analyze_pair(symbol: str) -> Optional[Dict]:
                 "risk_pct": None,
                 "reason": skip_reason,
                 "score": None,
-                "metrics": None
+                "metrics": None,
+                "debug_info": None
             }
 
         # Calculate setup score and metrics
@@ -107,8 +121,11 @@ def analyze_pair(symbol: str) -> Optional[Dict]:
                     "risk_pct": None,
                     "reason": "waiting too far from entry",
                     "score": None,
-                    "metrics": None
+                    "metrics": None,
+                    "debug_info": None
                 }
+
+        debug_info = get_debug_info(symbol, price, long_entry, "LONG")
 
         return {
             "symbol": symbol,
@@ -119,7 +136,8 @@ def analyze_pair(symbol: str) -> Optional[Dict]:
             "risk_pct": risk_pct_long,
             "reason": "pullback + breakout",
             "score": score,
-            "metrics": metrics
+            "metrics": metrics,
+            "debug_info": debug_info
         }
 
     # Check SHORT
@@ -134,7 +152,8 @@ def analyze_pair(symbol: str) -> Optional[Dict]:
                 "risk_pct": None,
                 "reason": "no pullback",
                 "score": None,
-                "metrics": None
+                "metrics": None,
+                "debug_info": None
             }
 
         # Calculate setup
@@ -143,9 +162,9 @@ def analyze_pair(symbol: str) -> Optional[Dict]:
         tp_long, tp_short = strategy.calculate_take_profits(long_entry, short_entry, sl_long, sl_short)
         risk_pct_long, risk_pct_short = strategy.calculate_risk_percent(long_entry, short_entry, sl_long, sl_short)
 
-        # Apply filters (with debug output)
+        # Apply filters (silent mode, debug collected only if final signal passes)
         should_skip, skip_reason = filters.apply_all_filters(
-            candles, long_entry, short_entry, risk_pct_long, risk_pct_short, is_long=False, debug=True
+            candles, long_entry, short_entry, risk_pct_long, risk_pct_short, is_long=False, debug=False
         )
 
         if should_skip:
@@ -158,7 +177,8 @@ def analyze_pair(symbol: str) -> Optional[Dict]:
                 "risk_pct": None,
                 "reason": skip_reason,
                 "score": None,
-                "metrics": None
+                "metrics": None,
+                "debug_info": None
             }
 
         # Calculate setup score and metrics
@@ -181,8 +201,11 @@ def analyze_pair(symbol: str) -> Optional[Dict]:
                     "risk_pct": None,
                     "reason": "waiting too far from entry",
                     "score": None,
-                    "metrics": None
+                    "metrics": None,
+                    "debug_info": None
                 }
+
+        debug_info = get_debug_info(symbol, price, short_entry, "SHORT")
 
         return {
             "symbol": symbol,
@@ -193,7 +216,8 @@ def analyze_pair(symbol: str) -> Optional[Dict]:
             "risk_pct": risk_pct_short,
             "reason": "pullback + breakdown",
             "score": score,
-            "metrics": metrics
+            "metrics": metrics,
+            "debug_info": debug_info
         }
 
     return None
@@ -227,7 +251,15 @@ def format_output(results: List[Dict]) -> None:
         skips + no_trades
     )
 
-    print("\n" + "=" * 180)
+    # Print debug info for displayed rows (only valid signals with debug data)
+    valid_results = [r for r in output_results if r.get("debug_info")]
+    if valid_results:
+        print("\n=== ENTRY STATE DEBUG ===")
+        for result in valid_results:
+            print(result["debug_info"])
+        print("=== END DEBUG ===\n")
+
+    print("=" * 180)
     print(
         f"{'SYMBOL':<10} {'SIGNAL':<12} {'ENTRY':<15} {'SL':<15} {'TP':<15} "
         f"{'RISK%':<8} {'DIST%':<8} {'GAP%':<8} {'PULL':<6} {'RATIO':<7} {'SCORE':<6} {'REASON':<20}"
