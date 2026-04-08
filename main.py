@@ -179,7 +179,6 @@ def format_output(results: List[Dict]) -> None:
 
 def main():
     """Main scan loop."""
-    print("Fetching top pairs...")
     pairs = binance.get_top_pairs(limit=10)
 
     if not pairs:

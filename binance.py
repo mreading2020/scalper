@@ -1,7 +1,6 @@
 """Binance API calls for futures data."""
 
 import requests
-import time
 from typing import List, Dict, Optional
 
 
@@ -9,33 +8,21 @@ BASE_URL = "https://fapi.binance.com"
 
 
 def get_top_pairs(limit: int = 10) -> List[str]:
-    """Fetch top pairs by 24h quote asset volume."""
-    try:
-        resp = requests.get(
-            f"{BASE_URL}/fapi/v1/ticker/24hr",
-            timeout=10
-        )
-        resp.raise_for_status()
-        data = resp.json()
-
-        # Filter USDT pairs and sort by quoteAssetVolume
-        usdt_pairs = []
-        for item in data:
-            if not isinstance(item, dict):
-                continue
-            if item.get("symbol", "").endswith("USDT"):
-                usdt_pairs.append(item)
-
-        # Sort by quoteAssetVolume (or volume if quoteAssetVolume doesn't exist)
-        usdt_pairs.sort(
-            key=lambda x: float(x.get("quoteAssetVolume") or x.get("volume") or 0),
-            reverse=True
-        )
-
-        return [pair["symbol"] for pair in usdt_pairs[:limit]]
-    except Exception as e:
-        print(f"Error fetching top pairs: {e}")
-        return []
+    """Return hardcoded clean watchlist (major liquid contracts)."""
+    # Clean watchlist: majors only, no leverage/meme/distorted contracts
+    watchlist = [
+        "BTCUSDT",
+        "ETHUSDT",
+        "SOLUSDT",
+        "BNBUSDT",
+        "XRPUSDT",
+        "ADAUSDT",
+        "DOGEUSDT",
+        "LINKUSDT",
+        "AVAXUSDT",
+        "LTCUSDT",
+    ]
+    return watchlist[:limit]
 
 
 def get_klines(symbol: str, interval: str = "5m", limit: int = 200) -> List[Dict]:
