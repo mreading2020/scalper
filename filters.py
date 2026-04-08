@@ -31,8 +31,8 @@ def distance_to_entry_filter(
     """
     Distance to entry filter: avoid missed entries.
 
-    LONG: if (price - long_entry) / long_entry > 0.0015 → SKIP
-    SHORT: if (short_entry - price) / short_entry > 0.0015 → SKIP
+    LONG: if (price - long_entry) / long_entry > 0.0012 → SKIP
+    SHORT: if (short_entry - price) / short_entry > 0.0012 → SKIP
 
     Returns (should_skip, reason).
     """
@@ -45,13 +45,13 @@ def distance_to_entry_filter(
         if long_entry == 0:
             return False, ""
         distance = (price - long_entry) / long_entry
-        if distance > 0.0015:
+        if distance > 0.0012:
             return True, "missed long"
     else:
         if short_entry == 0:
             return False, ""
         distance = (short_entry - price) / short_entry
-        if distance > 0.0015:
+        if distance > 0.0012:
             return True, "missed short"
 
     return False, ""
