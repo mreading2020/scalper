@@ -5,6 +5,7 @@ from typing import List, Dict, Optional
 import binance
 import strategy
 import filters
+import scoring
 
 
 def round_price(price: float) -> str:
@@ -39,7 +40,9 @@ def analyze_pair(symbol: str) -> Optional[Dict]:
             "sl": None,
             "tp": None,
             "risk_pct": None,
-            "reason": "no trend"
+            "reason": "no trend",
+            "score": None,
+            "metrics": None
         }
 
     # Detect pullback
@@ -55,7 +58,9 @@ def analyze_pair(symbol: str) -> Optional[Dict]:
                 "sl": None,
                 "tp": None,
                 "risk_pct": None,
-                "reason": "no pullback"
+                "reason": "no pullback",
+                "score": None,
+                "metrics": None
             }
 
         # Calculate setup
@@ -77,8 +82,13 @@ def analyze_pair(symbol: str) -> Optional[Dict]:
                 "sl": None,
                 "tp": None,
                 "risk_pct": None,
-                "reason": skip_reason
+                "reason": skip_reason,
+                "score": None,
+                "metrics": None
             }
+
+        # Calculate setup score and metrics
+        score, metrics = scoring.calculate_setup_score(candles, long_entry, risk_pct_long, is_long=True)
 
         return {
             "symbol": symbol,
@@ -87,7 +97,9 @@ def analyze_pair(symbol: str) -> Optional[Dict]:
             "sl": sl_long,
             "tp": tp_long,
             "risk_pct": risk_pct_long,
-            "reason": "pullback + breakout"
+            "reason": "pullback + breakout",
+            "score": score,
+            "metrics": metrics
         }
 
     # Check SHORT
@@ -100,7 +112,9 @@ def analyze_pair(symbol: str) -> Optional[Dict]:
                 "sl": None,
                 "tp": None,
                 "risk_pct": None,
-                "reason": "no pullback"
+                "reason": "no pullback",
+                "score": None,
+                "metrics": None
             }
 
         # Calculate setup
@@ -122,8 +136,13 @@ def analyze_pair(symbol: str) -> Optional[Dict]:
                 "sl": None,
                 "tp": None,
                 "risk_pct": None,
-                "reason": skip_reason
+                "reason": skip_reason,
+                "score": None,
+                "metrics": None
             }
+
+        # Calculate setup score and metrics
+        score, metrics = scoring.calculate_setup_score(candles, short_entry, risk_pct_short, is_long=False)
 
         return {
             "symbol": symbol,
@@ -132,23 +151,40 @@ def analyze_pair(symbol: str) -> Optional[Dict]:
             "sl": sl_short,
             "tp": tp_short,
             "risk_pct": risk_pct_short,
-            "reason": "pullback + breakdown"
+            "reason": "pullback + breakdown",
+            "score": score,
+            "metrics": metrics
         }
 
     return None
 
 
 def format_output(results: List[Dict]) -> None:
-    """Format and print results."""
-    # Sort: LONG/SHORT first, then SKIP, then NO TRADE
-    priority = {"LONG": 0, "SHORT": 1, "SKIP": 2, "NO TRADE": 3}
-    results.sort(key=lambda x: priority.get(x["signal"], 4))
+    """Format and print results with quality scoring."""
+    # Separate by signal type
+    longs = [r for r in results if r["signal"] == "LONG"]
+    shorts = [r for r in results if r["signal"] == "SHORT"]
+    skips = [r for r in results if r["signal"] == "SKIP"]
+    no_trades = [r for r in results if r["signal"] == "NO TRADE"]
 
-    print("\n" + "=" * 120)
-    print(f"{'SYMBOL':<10} {'SIGNAL':<10} {'ENTRY':<15} {'SL':<15} {'TP':<15} {'RISK':<10} REASON")
-    print("=" * 120)
+    # Sort by score (descending) and limit to top 2
+    longs.sort(key=lambda x: x.get("score", -1), reverse=True)
+    shorts.sort(key=lambda x: x.get("score", -1), reverse=True)
 
-    for result in results:
+    top_longs = longs[:2]
+    top_shorts = shorts[:2]
+
+    # Combine for output
+    output_results = top_longs + top_shorts + skips + no_trades
+
+    print("\n" + "=" * 160)
+    print(
+        f"{'SYMBOL':<10} {'SIGNAL':<10} {'ENTRY':<15} {'SL':<15} {'TP':<15} "
+        f"{'RISK%':<8} {'DIST%':<8} {'PULL':<6} {'RATIO':<7} {'SCORE':<6} {'REASON':<20}"
+    )
+    print("=" * 160)
+
+    for result in output_results:
         symbol = result["symbol"]
         signal = result["signal"]
         reason = result["reason"]
@@ -158,13 +194,24 @@ def format_output(results: List[Dict]) -> None:
             sl = round_price(result["sl"])
             tp = round_price(result["tp"])
             risk_str = f"{result['risk_pct'] * 100:.2f}%"
+
+            metrics = result["metrics"]
+            dist_str = f"{metrics['distance_to_entry_pct']:.2f}%"
+            pull_str = f"{metrics['pullback_count']}"
+            ratio_str = f"{metrics['last_candle_ratio']:.2f}x"
+            score_str = f"{result['score']}/5"
+
             print(
-                f"{symbol:<10} {signal:<10} {entry:<15} {sl:<15} {tp:<15} {risk_str:<10} {reason}"
+                f"{symbol:<10} {signal:<10} {entry:<15} {sl:<15} {tp:<15} "
+                f"{risk_str:<8} {dist_str:<8} {pull_str:<6} {ratio_str:<7} {score_str:<6} {reason:<20}"
             )
         else:
-            print(f"{symbol:<10} {signal:<10} {'-':<15} {'-':<15} {'-':<15} {'-':<10} {reason}")
+            print(
+                f"{symbol:<10} {signal:<10} {'-':<15} {'-':<15} {'-':<15} "
+                f"{'-':<8} {'-':<8} {'-':<6} {'-':<7} {'-':<6} {reason:<20}"
+            )
 
-    print("=" * 120 + "\n")
+    print("=" * 160 + "\n")
 
 
 def main():
