@@ -3,6 +3,28 @@
 from typing import List, Dict, Tuple
 
 
+def calculate_distance(price: float, entry: float, side: str) -> float:
+    """
+    Calculate entry distance as decimal (not percentage).
+
+    Returns distance >= 0.0
+
+    LONG: (price - entry) / entry
+    SHORT: (entry - price) / entry
+    """
+    if entry == 0:
+        return 0.0
+
+    if side == "LONG":
+        distance = (price - entry) / entry
+    elif side == "SHORT":
+        distance = (entry - price) / entry
+    else:
+        return 0.0
+
+    return max(0.0, distance)
+
+
 def late_move_filter(candles: List[Dict]) -> Tuple[bool, str]:
     """
     Late move filter: if last_size > avg_size * 1.5 → SKIP.
@@ -26,13 +48,14 @@ def distance_to_entry_filter(
     candles: List[Dict],
     long_entry: float,
     short_entry: float,
-    is_long: bool
+    is_long: bool,
+    debug: bool = False
 ) -> Tuple[bool, str]:
     """
     Distance to entry filter: avoid missed entries.
 
-    LONG: if (price - long_entry) / long_entry > 0.0012 → SKIP
-    SHORT: if (short_entry - price) / short_entry > 0.0012 → SKIP
+    Uses shared calculate_distance function.
+    Threshold: 0.0012 (0.12%)
 
     Returns (should_skip, reason).
     """
@@ -40,19 +63,32 @@ def distance_to_entry_filter(
         return False, ""
 
     price = candles[-1]["close"]
+    max_distance = 0.0012
 
     if is_long:
-        if long_entry == 0:
-            return False, ""
-        distance = (price - long_entry) / long_entry
-        if distance > 0.0012:
-            return True, "missed long"
+        entry = long_entry
+        side = "LONG"
     else:
-        if short_entry == 0:
-            return False, ""
-        distance = (short_entry - price) / short_entry
-        if distance > 0.0012:
+        entry = short_entry
+        side = "SHORT"
+
+    distance = calculate_distance(price, entry, side)
+
+    if debug:
+        dist_pct = distance * 100
+        print(f"  [DISTANCE FILTER] side={side} price={price:.2f} entry={entry:.2f} "
+              f"distance_raw={distance:.6f} dist_pct={dist_pct:.2f}% threshold={max_distance:.4f}")
+
+    if distance > max_distance:
+        if debug:
+            print(f"    → SKIP: {distance:.6f} > {max_distance:.6f}")
+        if is_long:
+            return True, "missed long"
+        else:
             return True, "missed short"
+
+    if debug:
+        print(f"    → PASS")
 
     return False, ""
 
@@ -135,7 +171,8 @@ def apply_all_filters(
     short_entry: float,
     risk_pct_long: float,
     risk_pct_short: float,
-    is_long: bool
+    is_long: bool,
+    debug: bool = False
 ) -> Tuple[bool, str]:
     """
     Apply all filters in order. Return first failure.
@@ -153,7 +190,7 @@ def apply_all_filters(
         return True, reason
 
     # Distance to entry filter
-    skip, reason = distance_to_entry_filter(candles, long_entry, short_entry, is_long)
+    skip, reason = distance_to_entry_filter(candles, long_entry, short_entry, is_long, debug=debug)
     if skip:
         return True, reason
 

@@ -69,9 +69,9 @@ def analyze_pair(symbol: str) -> Optional[Dict]:
         tp_long, tp_short = strategy.calculate_take_profits(long_entry, short_entry, sl_long, sl_short)
         risk_pct_long, risk_pct_short = strategy.calculate_risk_percent(long_entry, short_entry, sl_long, sl_short)
 
-        # Apply filters
+        # Apply filters (with debug output)
         should_skip, skip_reason = filters.apply_all_filters(
-            candles, long_entry, short_entry, risk_pct_long, risk_pct_short, is_long=True
+            candles, long_entry, short_entry, risk_pct_long, risk_pct_short, is_long=True, debug=True
         )
 
         if should_skip:
@@ -123,9 +123,9 @@ def analyze_pair(symbol: str) -> Optional[Dict]:
         tp_long, tp_short = strategy.calculate_take_profits(long_entry, short_entry, sl_long, sl_short)
         risk_pct_long, risk_pct_short = strategy.calculate_risk_percent(long_entry, short_entry, sl_long, sl_short)
 
-        # Apply filters
+        # Apply filters (with debug output)
         should_skip, skip_reason = filters.apply_all_filters(
-            candles, long_entry, short_entry, risk_pct_long, risk_pct_short, is_long=False
+            candles, long_entry, short_entry, risk_pct_long, risk_pct_short, is_long=False, debug=True
         )
 
         if should_skip:
@@ -196,7 +196,8 @@ def format_output(results: List[Dict]) -> None:
             risk_str = f"{result['risk_pct'] * 100:.2f}%"
 
             metrics = result["metrics"]
-            dist_str = f"{metrics['distance_to_entry_pct']:.2f}%"
+            dist_pct = metrics['distance_to_entry_pct'] * 100
+            dist_str = f"{dist_pct:.2f}%"
             pull_str = f"{metrics['pullback_count']}"
             ratio_str = f"{metrics['last_candle_ratio']:.2f}x"
             score_str = f"{result['score']}/5"

@@ -1,6 +1,7 @@
 """Setup quality scoring (V4 enhancement)."""
 
 from typing import List, Dict, Tuple
+import filters
 
 
 def count_bearish_candles(candles: List[Dict]) -> int:
@@ -21,24 +22,19 @@ def count_bullish_candles(candles: List[Dict]) -> int:
 
 def get_distance_to_entry(candles: List[Dict], entry: float, is_long: bool) -> float:
     """
-    Calculate distance from current price to entry as percentage.
+    Calculate distance from current price to entry as decimal (not percentage).
 
-    LONG: (price - entry) / entry * 100
-    SHORT: (entry - price) / entry * 100
+    Uses shared calculate_distance function for consistency.
 
-    Returns positive value (always >= 0).
+    Returns decimal value (e.g., 0.0029 for 0.29%).
     """
     if len(candles) == 0 or entry == 0:
         return 0.0
 
     price = candles[-1]["close"]
+    side = "LONG" if is_long else "SHORT"
 
-    if is_long:
-        distance = (price - entry) / entry * 100
-    else:
-        distance = (entry - price) / entry * 100
-
-    return abs(distance)
+    return filters.calculate_distance(price, entry, side)
 
 
 def get_last_candle_size_ratio(candles: List[Dict]) -> float:
